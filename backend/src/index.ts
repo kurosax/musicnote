@@ -40,6 +40,8 @@ type SpeakerSegment = {
   text: string;
   start?: number;
   end?: number;
+  absoluteStart?: string;
+  absoluteEnd?: string;
 };
 
 type TranscriptRecord = {
@@ -72,6 +74,7 @@ type AudioFileMessage = {
   sessionId?: string;
   segmentIndex?: number;
   segmentOffsetSeconds?: number;
+  segmentStartedAt?: string;
   sizeBytes?: number;
   base64Audio?: string;
 };
@@ -247,7 +250,7 @@ async function normalizeTranscriptToJapanese(text: string): Promise<string> {
         {
           role: "system",
           content:
-            "あなたはサックスレッスンの文字起こしを日本語に整える係です。英語、韓国語、ローマ字、誤変換が混ざっていても、すべて自然な日本語に直してください。[00:12] のような時刻、話者1、話者2、話者 の行頭ラベルは必ずそのまま残してください。音楽用語、ドレミファソラシド、半音、全音、スケール、コード、キー、テンポ、リズム、拍、音程、運指、タンギング、ロングトーン、ビブラート、ブレス、アンブシュアを優先してください。フィラーは削ってください。内容を追加せず、文字起こし本文だけを返してください。",
+            "あなたはサックスレッスンの文字起こしを日本語に整える係です。英語、韓国語、ローマ字、誤変換が混ざっていても、すべて自然な日本語に直してください。[15:34:20] のような時刻、話者1、話者2、話者 の行頭ラベルは必ずそのまま残してください。音楽用語、ドレミファソラシド、半音、全音、スケール、コード、キー、テンポ、リズム、拍、音程、運指、タンギング、ロングトーン、ビブラート、ブレス、アンブシュアを優先してください。フィラーは削ってください。内容を追加せず、文字起こし本文だけを返してください。",
         },
         { role: "user", content: cleanedText },
       ],
@@ -270,6 +273,22 @@ function getSpeakerRole(speaker: string): SpeakerSegment["role"] {
   }
 
   return "話者";
+}
+
+function formatClockTimestamp(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return isoTimestamp;
+  }
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Tokyo",
+  }).format(date);
 }
 
 function formatTranscriptTimestamp(seconds: number): string {
@@ -298,7 +317,9 @@ function formatSpeakerTranscript(segments: SpeakerSegment[]): string {
   return mergedSegments
     .map((segment) => {
       const timestamp =
-        typeof segment.start === "number"
+        typeof segment.absoluteStart === "string"
+          ? `[${formatClockTimestamp(segment.absoluteStart)}] `
+          : typeof segment.start === "number"
           ? `[${formatTranscriptTimestamp(segment.start)}] `
           : "";
       return `${timestamp}${segment.role}: ${segment.text}`;
@@ -309,15 +330,30 @@ function formatSpeakerTranscript(segments: SpeakerSegment[]): string {
 function offsetSpeakerSegments(
   segments: SpeakerSegment[] | undefined,
   offsetSeconds: number,
+  segmentStartedAt?: string,
 ): SpeakerSegment[] | undefined {
-  if (segments === undefined || segments.length === 0 || offsetSeconds <= 0) {
+  if (segments === undefined || segments.length === 0) {
     return segments;
   }
+
+  const segmentStartedTime =
+    segmentStartedAt === undefined ? Date.now() : new Date(segmentStartedAt).getTime();
+  const safeSegmentStartedTime = Number.isNaN(segmentStartedTime)
+    ? Date.now()
+    : segmentStartedTime;
 
   return segments.map((segment) => ({
     ...segment,
     start: typeof segment.start === "number" ? segment.start + offsetSeconds : segment.start,
     end: typeof segment.end === "number" ? segment.end + offsetSeconds : segment.end,
+    absoluteStart:
+      typeof segment.start === "number"
+        ? new Date(safeSegmentStartedTime + segment.start * 1000).toISOString()
+        : segmentStartedAt,
+    absoluteEnd:
+      typeof segment.end === "number"
+        ? new Date(safeSegmentStartedTime + segment.end * 1000).toISOString()
+        : undefined,
   }));
 }
 
@@ -416,6 +452,7 @@ transcribeWss.on("connection", (socket: WebSocket) => {
         const adjustedSpeakerSegments = offsetSpeakerSegments(
           transcriptionResult.speakerSegments,
           segmentOffsetSeconds,
+          parsedMessage.segmentStartedAt,
         );
         const transcriptText =
           adjustedSpeakerSegments !== undefined && adjustedSpeakerSegments.length > 0
@@ -457,6 +494,7 @@ transcribeWss.on("connection", (socket: WebSocket) => {
             sessionId: parsedMessage.sessionId,
             segmentIndex: parsedMessage.segmentIndex,
             segmentOffsetSeconds,
+            segmentStartedAt: parsedMessage.segmentStartedAt,
             transcript: transcriptText,
             speakerSegments: adjustedSpeakerSegments,
           }),
