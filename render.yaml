@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: music-app-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: HOST
+        value: 0.0.0.0
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-4o-transcribe-diarize
+      - key: OPENAI_TRANSCRIPTION_LANGUAGE
+        value: ja
+      - key: FORCE_JAPANESE_TRANSCRIPTS
+        value: "true"
+      - key: OPENAI_TRANSCRIPT_NORMALIZER_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_API_KEY
+        sync: false
