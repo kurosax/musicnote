@@ -20,6 +20,70 @@ const transcriptUploadDir = path.join(uploadDir, "transcripts");
 const transcriptionModel =
   process.env.OPENAI_TRANSCRIPTION_MODEL ?? "gpt-4o-transcribe-diarize";
 const transcriptionLanguage = process.env.OPENAI_TRANSCRIPTION_LANGUAGE ?? "ja";
+const musicTerms =
+  process.env.MUSIC_TERMS ??
+  [
+    "ドレミファソラシド",
+    "半音",
+    "全音",
+    "スケール",
+    "メジャースケール",
+    "マイナースケール",
+    "クロマチックスケール",
+    "コード",
+    "コードトーン",
+    "キー",
+    "テンポ",
+    "リズム",
+    "拍",
+    "拍子",
+    "裏拍",
+    "音程",
+    "ピッチ",
+    "チューニング",
+    "運指",
+    "替え指",
+    "タンギング",
+    "シングルタンギング",
+    "ダブルタンギング",
+    "スラー",
+    "スタッカート",
+    "アクセント",
+    "レガート",
+    "ロングトーン",
+    "ビブラート",
+    "ブレス",
+    "息",
+    "息のスピード",
+    "アンブシュア",
+    "マウスピース",
+    "リード",
+    "リガチャー",
+    "ネック",
+    "ベル",
+    "オクターブキー",
+    "サブトーン",
+    "オーバートーン",
+    "フラジオ",
+    "アーティキュレーション",
+    "ニュアンス",
+    "フレーズ",
+    "アドリブ",
+    "ソロ",
+    "テーマ",
+    "メロディ",
+    "ハーモニー",
+    "ジャズ",
+    "ブルース",
+    "ツーファイブ",
+    "ツーファイブワン",
+    "循環",
+    "II-V-I",
+    "ブルーノート",
+  ].join("、");
+const transcriptionPrompt =
+  process.env.OPENAI_TRANSCRIPTION_PROMPT ??
+  `これは日本語のサックスレッスン音声です。英語として聞こえる断片も、原則として日本語の音楽レッスン文脈で解釈してください。特に次の音楽用語を優先して認識してください: ${musicTerms}。「あー」「えっと」「うーん」「あの」「その」などの意味の薄いフィラーや言いよどみは省き、話の内容が分かる自然な日本語の文章として文字起こししてください。`;
 const transcriptionUsesDiarization = transcriptionModel.includes("diarize");
 const forceJapaneseTranscripts = process.env.FORCE_JAPANESE_TRANSCRIPTS !== "false";
 const transcriptNormalizerModel =
@@ -250,7 +314,7 @@ async function normalizeTranscriptToJapanese(text: string): Promise<string> {
         {
           role: "system",
           content:
-            "あなたはサックスレッスンの文字起こしを日本語に整える係です。英語、韓国語、ローマ字、誤変換が混ざっていても、すべて自然な日本語に直してください。[15:34:20] のような時刻、話者1、話者2、話者 の行頭ラベルは必ずそのまま残してください。音楽用語、ドレミファソラシド、半音、全音、スケール、コード、キー、テンポ、リズム、拍、音程、運指、タンギング、ロングトーン、ビブラート、ブレス、アンブシュアを優先してください。フィラーは削ってください。内容を追加せず、文字起こし本文だけを返してください。",
+            `あなたはサックスレッスンの文字起こしを日本語に整える係です。英語、韓国語、ローマ字、誤変換が混ざっていても、すべて自然な日本語に直してください。[15:34:20] のような時刻、話者1、話者2、話者 の行頭ラベルは必ずそのまま残してください。音楽レッスン文脈を最優先し、次の用語を積極的に採用してください: ${musicTerms}。例えば「scale」は「スケール」、「key」は「キー」、「tone」は「トーン」、「reed」は「リード」、「mouthpiece」は「マウスピース」として扱います。あー、えっと、うーん、あの、その、などのフィラーは削ってください。内容を追加せず、文字起こし本文だけを返してください。`,
         },
         { role: "user", content: cleanedText },
       ],
@@ -366,13 +430,11 @@ async function transcribeAudioFile(savedPath: string): Promise<TranscriptionResu
     file: createReadStream(savedPath),
     model: transcriptionModel,
     language: transcriptionLanguage,
+    prompt: transcriptionPrompt,
   };
 
   if (transcriptionUsesDiarization) {
     transcriptionRequest.response_format = "diarized_json";
-  } else {
-    transcriptionRequest.prompt =
-      "これは日本語のサックスレッスン音声です。音楽用語、ドレミファソラシド、半音、全音、スケール、コード、キー、テンポ、リズム、拍、音程、運指、タンギング、ロングトーン、ビブラート、ブレス、アンブシュアなどを優先してください。フィラーは省いてください。";
   }
 
   const transcription = await openai.audio.transcriptions.create(
